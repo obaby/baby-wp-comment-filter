@@ -3,12 +3,16 @@
  * Plugin Name: Baby WP 评论强化拦截插件
  * Plugin URI: https://h4ck.org.cn
  * Description: 一个强大的WordPress评论过滤插件，支持字数限制、中文检测、关键词过滤等功能
- * Version: 1.0.1
+ * Version: 1.0.2
  * Author: obaby
  * Author URI: https://h4ck.org.cn
  * License: GPL v2 or later
  * Text Domain: baby-wp-comment-filter
  * Domain Path: /languages
+ * Requires at least: 5.5+
+ * Tested up to: 6.8.2
+ * Requires PHP: 7.4+
+ * Network: false
  */
 
 // 防止直接访问
@@ -17,7 +21,7 @@ if (!defined('ABSPATH')) {
 }
 
 // 定义插件常量
-define('BABY_WP_COMMENT_FILTER_VERSION', '1.0.1');
+define('BABY_WP_COMMENT_FILTER_VERSION', '1.0.2');
 define('BABY_WP_COMMENT_FILTER_PLUGIN_FILE', __FILE__);
 define('BABY_WP_COMMENT_FILTER_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('BABY_WP_COMMENT_FILTER_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -82,7 +86,7 @@ class Baby_WP_Comment_Filter {
     public function add_admin_menu() {
         add_options_page(
             'Baby WP 评论设置',
-            '🈲评论拦截设置',
+            '🛡️评论拦截设置🈲',
             'manage_options',
             'baby-wp-comment-filter',
             array($this, 'admin_page')
@@ -447,6 +451,20 @@ class Baby_WP_Comment_Filter {
             padding: 15px;
             margin: 20px 0;
         }
+        .baby-wp-requirements {
+            background: #fff;
+            border: 1px solid #ccd0d4;
+            border-radius: 4px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .baby-wp-requirements .form-table th {
+            width: 150px;
+            font-weight: bold;
+        }
+        .baby-wp-requirements .form-table td {
+            padding: 8px 10px;
+        }
         </style>
         
         <div class="wrap">
@@ -489,6 +507,55 @@ class Baby_WP_Comment_Filter {
                     <a href="<?php echo admin_url('options-general.php?page=baby-wp-install-check'); ?>" class="button">环境检查</a> -->
                     <button type="button" id="reset-stats" class="button button-secondary">重置统计信息</button>
                 </p>
+            </div>
+            
+            <div class="baby-wp-requirements">
+                <h3>🔧 系统要求信息</h3>
+                <?php
+                $errors = baby_wp_check_requirements();
+                if (empty($errors)) {
+                    echo '<div style="color: #46b450; font-weight: bold;">✅ 系统要求检查通过</div>';
+                } else {
+                    echo '<div style="color: #dc3232; font-weight: bold;">❌ 系统要求检查失败</div>';
+                    echo '<ul>';
+                    foreach ($errors as $error) {
+                        echo '<li style="color: #dc3232;">' . esc_html($error) . '</li>';
+                    }
+                    echo '</ul>';
+                }
+                ?>
+                <table class="form-table">
+                    <tr>
+                        <th scope="row">PHP版本</th>
+                        <td>
+                            <strong><?php echo PHP_VERSION; ?></strong>
+                            <?php if (version_compare(PHP_VERSION, '7.4', '>=')): ?>
+                                <span style="color: #46b450;">✅ 满足要求 (≥7.4)</span>
+                            <?php else: ?>
+                                <span style="color: #dc3232;">❌ 不满足要求 (需要≥7.4)</span>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">WordPress版本</th>
+                        <td>
+                            <strong><?php global $wp_version; echo $wp_version; ?></strong>
+                            <?php if (version_compare($wp_version, '5.0', '>=')): ?>
+                                <span style="color: #46b450;">✅ 满足要求 (≥5.0)</span>
+                            <?php else: ?>
+                                <span style="color: #dc3232;">❌ 不满足要求 (需要≥5.0)</span>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">插件版本</th>
+                        <td><strong><?php echo BABY_WP_COMMENT_FILTER_VERSION; ?></strong></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">测试兼容性</th>
+                        <td>WordPress 6.4</td>
+                    </tr>
+                </table>
             </div>
             
             <div class="card">
@@ -645,8 +712,54 @@ class Baby_WP_Comment_Filter {
     
 }
 
+/**
+ * 检查系统要求
+ */
+function baby_wp_check_requirements() {
+    $errors = array();
+    
+    // 检查PHP版本
+    if (version_compare(PHP_VERSION, '7.4', '<')) {
+        $errors[] = sprintf(
+            'Baby WP 评论强化拦截插件需要 PHP 7.4 或更高版本。当前版本：%s',
+            PHP_VERSION
+        );
+    }
+    
+    // 检查WordPress版本
+    global $wp_version;
+    if (version_compare($wp_version, '5.0', '<')) {
+        $errors[] = sprintf(
+            'Baby WP 评论强化拦截插件需要 WordPress 5.0 或更高版本。当前版本：%s',
+            $wp_version
+        );
+    }
+    
+    return $errors;
+}
+
+/**
+ * 显示版本要求错误信息
+ */
+function baby_wp_show_version_error() {
+    $errors = baby_wp_check_requirements();
+    if (!empty($errors)) {
+        $message = '<div class="error"><p><strong>Baby WP 评论强化拦截插件无法激活：</strong></p><ul>';
+        foreach ($errors as $error) {
+            $message .= '<li>' . esc_html($error) . '</li>';
+        }
+        $message .= '</ul></div>';
+        
+        deactivate_plugins(plugin_basename(__FILE__));
+        wp_die($message, '插件激活失败', array('back_link' => true));
+    }
+}
+
 // 注册插件激活和停用钩子（必须在类实例化之前）
 register_activation_hook(__FILE__, function() {
+    // 首先检查系统要求
+    baby_wp_show_version_error();
+    
     // 设置默认选项
     $default_options = array(
         'min_length' => 0,
