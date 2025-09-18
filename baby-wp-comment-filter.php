@@ -3,7 +3,7 @@
  * Plugin Name: Baby WP 评论强化拦截插件
  * Plugin URI: https://h4ck.org.cn
  * Description: 一个强大的WordPress评论过滤插件，支持字数限制、中文检测、关键词过滤等功能
- * Version: 1.0.0
+ * Version: 1.0.1
  * Author: obaby
  * Author URI: https://h4ck.org.cn
  * License: GPL v2 or later
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // 定义插件常量
-define('BABY_WP_COMMENT_FILTER_VERSION', '1.0.0');
+define('BABY_WP_COMMENT_FILTER_VERSION', '1.0.1');
 define('BABY_WP_COMMENT_FILTER_PLUGIN_FILE', __FILE__);
 define('BABY_WP_COMMENT_FILTER_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('BABY_WP_COMMENT_FILTER_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -58,6 +58,7 @@ class Baby_WP_Comment_Filter {
         add_action('admin_menu', array($this, 'add_admin_menu'));
         add_action('admin_init', array($this, 'register_settings'));
         add_filter('preprocess_comment', array($this, 'filter_comment'));
+        add_action('wp_ajax_baby_wp_reset_stats', array($this, 'ajax_reset_stats'));
     }
     
     /**
@@ -81,7 +82,7 @@ class Baby_WP_Comment_Filter {
     public function add_admin_menu() {
         add_options_page(
             'Baby WP 评论设置',
-            'Baby WP 评论',
+            '🈲评论拦截设置',
             'manage_options',
             'baby-wp-comment-filter',
             array($this, 'admin_page')
@@ -484,8 +485,9 @@ class Baby_WP_Comment_Filter {
                 echo '<p><strong>最后重置时间：</strong>' . date('Y-m-d H:i:s', $stats['last_reset']) . '</p>';
                 ?>
                 <p>
-                    <a href="<?php echo admin_url('options-general.php?page=baby-wp-test'); ?>" class="button">运行功能测试</a>
-                    <a href="<?php echo admin_url('options-general.php?page=baby-wp-install-check'); ?>" class="button">环境检查</a>
+                    <!-- <a href="<?php echo admin_url('options-general.php?page=baby-wp-test'); ?>" class="button">运行功能测试</a>
+                    <a href="<?php echo admin_url('options-general.php?page=baby-wp-install-check'); ?>" class="button">环境检查</a> -->
+                    <button type="button" id="reset-stats" class="button button-secondary">重置统计信息</button>
                 </p>
             </div>
             
@@ -521,7 +523,57 @@ class Baby_WP_Comment_Filter {
                 </ul>
             </div>
         </div>
+        
+        <script type="text/javascript">
+        jQuery(document).ready(function($) {
+            $("#reset-stats").click(function() {
+                if (confirm("确定要重置所有统计信息吗？此操作不可恢复。")) {
+                    // 发送AJAX请求重置统计信息
+                    $.ajax({
+                        url: ajaxurl,
+                        type: 'POST',
+                        data: {
+                            action: 'baby_wp_reset_stats',
+                            nonce: '<?php echo wp_create_nonce('baby_wp_reset_stats'); ?>'
+                        },
+                        success: function(response) {
+                            if (response.success) {
+                                alert('统计信息已重置！');
+                                location.reload();
+                            } else {
+                                alert('重置失败：' + response.data);
+                            }
+                        },
+                        error: function() {
+                            alert('重置失败，请重试。');
+                        }
+                    });
+                }
+            });
+        });
+        </script>
         <?php
+    }
+    
+    /**
+     * AJAX处理重置统计信息
+     */
+    public function ajax_reset_stats() {
+        // 检查权限
+        if (!current_user_can('manage_options')) {
+            wp_die('权限不足');
+        }
+        
+        // 验证nonce
+        if (!wp_verify_nonce($_POST['nonce'], 'baby_wp_reset_stats')) {
+            wp_die('安全验证失败');
+        }
+        
+        // 重置统计信息
+        baby_wp_reset_stats();
+        
+        // 返回成功响应
+        wp_send_json_success('统计信息已重置');
     }
     
     /**
@@ -545,6 +597,7 @@ class Baby_WP_Comment_Filter {
         // 检查最少字数
         $min_length = isset($options['min_length']) ? intval($options['min_length']) : 0;
         if ($min_length > 0 && $comment_length < $min_length) {
+            baby_wp_update_stats('filtered_by_length');
             $message = baby_wp_format_error_message($messages['too_short'], array('min_length' => $min_length));
             wp_die($message, $titles['too_short'], array('back_link' => true));
         }
@@ -552,6 +605,7 @@ class Baby_WP_Comment_Filter {
         // 检查最多字数
         $max_length = isset($options['max_length']) ? intval($options['max_length']) : 1800;
         if ($comment_length > $max_length) {
+            baby_wp_update_stats('filtered_by_length');
             $message = baby_wp_format_error_message($messages['too_long'], array('max_length' => $max_length));
             wp_die($message, $titles['too_long'], array('back_link' => true));
         }
@@ -559,6 +613,7 @@ class Baby_WP_Comment_Filter {
         // 检查是否要求中文
         $require_chinese = isset($options['require_chinese']) ? $options['require_chinese'] : 1;
         if ($require_chinese && preg_match('/[\x{4e00}-\x{9fa5}]/u', $comment_content) === 0) {
+            baby_wp_update_stats('filtered_by_chinese');
             wp_die($messages['no_chinese'], $titles['no_chinese'], array('back_link' => true));
         }
         
@@ -581,6 +636,7 @@ class Baby_WP_Comment_Filter {
         
         // 检查是否包含禁止关键词
         if (!empty($banned_words) && baby_wp_has_banned_word($comment_content, $banned_words)) {
+            baby_wp_update_stats('filtered_by_keywords');
             wp_die($messages['banned_word'], $titles['banned_word'], array('back_link' => true));
         }
         
