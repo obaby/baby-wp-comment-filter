@@ -3,7 +3,7 @@
  * Plugin Name: Baby WP 评论强化拦截插件
  * Plugin URI: https://h4ck.org.cn
  * Description: 一个强大的WordPress评论过滤插件，支持字数限制、中文检测、关键词过滤等功能
- * Version: 1.0.2
+ * Version: 1.0.5
  * Author: obaby
  * Author URI: https://h4ck.org.cn
  * License: GPL v2 or later
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 }
 
 // 定义插件常量
-define('BABY_WP_COMMENT_FILTER_VERSION', '1.0.2');
+define('BABY_WP_COMMENT_FILTER_VERSION', '1.0.5');
 define('BABY_WP_COMMENT_FILTER_PLUGIN_FILE', __FILE__);
 define('BABY_WP_COMMENT_FILTER_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('BABY_WP_COMMENT_FILTER_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -97,7 +97,7 @@ class Baby_WP_Comment_Filter {
      * 注册设置
      */
     public function register_settings() {
-        register_setting('baby_wp_comment_filter_settings', 'baby_wp_comment_filter_options');
+        register_setting('baby_wp_comment_filter_settings', 'baby_wp_comment_filter_options', array($this, 'sanitize_options'));
         
         add_settings_section(
             'baby_wp_comment_filter_main',
@@ -178,6 +178,51 @@ class Baby_WP_Comment_Filter {
     }
     
     /**
+     * 清理和验证设置选项
+     */
+    public function sanitize_options($input) {
+        $sanitized = array();
+        
+        // 处理复选框字段 - 如果未勾选，则设置为0
+        $checkbox_fields = array('require_chinese', 'use_wp_keywords');
+        foreach ($checkbox_fields as $field) {
+            $sanitized[$field] = isset($input[$field]) ? 1 : 0;
+        }
+        
+        // 处理数字字段
+        if (isset($input['min_length'])) {
+            $sanitized['min_length'] = max(0, intval($input['min_length']));
+        }
+        
+        if (isset($input['max_length'])) {
+            $sanitized['max_length'] = max(1, intval($input['max_length']));
+        }
+        
+        // 处理文本字段
+        if (isset($input['custom_banned_words'])) {
+            $sanitized['custom_banned_words'] = sanitize_textarea_field($input['custom_banned_words']);
+        }
+        
+        // 处理错误消息
+        if (isset($input['error_messages']) && is_array($input['error_messages'])) {
+            $sanitized['error_messages'] = array();
+            foreach ($input['error_messages'] as $key => $message) {
+                $sanitized['error_messages'][sanitize_key($key)] = sanitize_textarea_field($message);
+            }
+        }
+        
+        // 处理错误标题
+        if (isset($input['error_titles']) && is_array($input['error_titles'])) {
+            $sanitized['error_titles'] = array();
+            foreach ($input['error_titles'] as $key => $title) {
+                $sanitized['error_titles'][sanitize_key($key)] = sanitize_text_field($title);
+            }
+        }
+        
+        return $sanitized;
+    }
+    
+    /**
      * 最少字数回调
      */
     public function min_length_callback() {
@@ -226,17 +271,25 @@ class Baby_WP_Comment_Filter {
         echo '<input type="checkbox" name="baby_wp_comment_filter_options[use_wp_keywords]" value="1" ' . checked(1, $value, false) . ' />';
         echo '<p class="description">勾选后，将使用WordPress后台"讨论设置"中的禁止关键词</p>';
         
+        // 添加跳转到WordPress讨论设置页面的链接
+        $discussion_url = admin_url('options-discussion.php');
+        echo '<p><a href="' . esc_url($discussion_url) . '" target="_blank" class="button button-secondary" style="margin-top: 5px;">📝 前往WordPress讨论设置</a></p>';
+        
         // 显示当前WordPress设置的关键词
         $wp_keywords = baby_wp_get_disallowed_comment_keys();
         if (!empty($wp_keywords)) {
-            echo '<p><strong>当前WordPress禁止关键词：</strong></p>';
-            echo '<ul>';
+            echo '<div style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-left: 3px solid #0073aa; border-radius: 3px;">';
+            echo '<p style="margin: 0 0 8px 0; font-style: italic; color: #666; font-size: 13px;"><strong>📋 当前WordPress禁止关键词：</strong></p>';
+            echo '<ul style="margin: 0; padding-left: 20px;">';
             foreach ($wp_keywords as $keyword) {
-                echo '<li>' . esc_html($keyword) . '</li>';
+                echo '<li style="margin: 2px 0; font-size: 13px;">' . esc_html($keyword) . '</li>';
             }
             echo '</ul>';
+            echo '</div>';
         } else {
-            echo '<p><em>当前没有设置WordPress禁止关键词</em></p>';
+            echo '<div style="margin-top: 10px; padding: 10px; background: #fff3cd; border-left: 3px solid #ffc107; border-radius: 3px;">';
+            echo '<p style="margin: 0; font-style: italic; color: #856404; font-size: 13px;"><em>💡 当前没有设置WordPress禁止关键词</em></p>';
+            echo '</div>';
         }
     }
     
@@ -444,26 +497,72 @@ class Baby_WP_Comment_Filter {
             margin-top: 0;
             color: #0073aa;
         }
-        .baby-wp-stats {
-            background: #fff;
+        .baby-wp-info-row {
             border: 1px solid #ccd0d4;
             border-radius: 4px;
             padding: 15px;
             margin: 20px 0;
+            background: #f9f9f9;
+            overflow: hidden;
+            clear: both;
+        }
+        .baby-wp-stats {
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 15px;
+            margin: 0;
+            width: auto;
+            float: left;
+            box-sizing: border-box;
+            min-width: 300px;
         }
         .baby-wp-requirements {
             background: #fff;
-            border: 1px solid #ccd0d4;
+            border: 1px solid #ddd;
             border-radius: 4px;
             padding: 15px;
-            margin: 20px 0;
+            margin: 0 0 0 20px;
+            width: auto;
+            float: left;
+            box-sizing: border-box;
+            min-width: 300px;
+        }
+        @media (max-width: 768px) {
+            .baby-wp-stats,
+            .baby-wp-requirements {
+                width: 100%;
+                margin: 10px 0;
+                float: none;
+                min-width: auto;
+            }
+            .baby-wp-requirements {
+                margin: 10px 0 0 0;
+            }
         }
         .baby-wp-requirements .form-table th {
-            width: 150px;
+            width: 120px;
             font-weight: bold;
+            padding: 4px 8px;
+            font-size: 13px;
         }
         .baby-wp-requirements .form-table td {
-            padding: 8px 10px;
+            padding: 4px 8px;
+            font-size: 13px;
+            line-height: 1.4;
+        }
+        .baby-wp-requirements .form-table {
+            margin: 0;
+        }
+        .baby-wp-requirements .form-table tr {
+            border-bottom: none;
+        }
+        .baby-wp-requirements .requirements-list p {
+            margin: 8px 0;
+            line-height: 1.4;
+        }
+        .baby-wp-requirements .requirements-list p:last-child {
+            margin-bottom: 0;
         }
         </style>
         
@@ -492,24 +591,25 @@ class Baby_WP_Comment_Filter {
                 </ul>
             </div>
             
-            <div class="baby-wp-stats">
-                <h3>📊 插件统计信息</h3>
-                <?php
-                $stats = baby_wp_get_plugin_stats();
-                echo '<p><strong>总过滤次数：</strong>' . intval($stats['total_filtered']) . '</p>';
-                echo '<p><strong>字数限制过滤：</strong>' . intval($stats['filtered_by_length']) . '</p>';
-                echo '<p><strong>中文检测过滤：</strong>' . intval($stats['filtered_by_chinese']) . '</p>';
-                echo '<p><strong>关键词过滤：</strong>' . intval($stats['filtered_by_keywords']) . '</p>';
-                echo '<p><strong>最后重置时间：</strong>' . date('Y-m-d H:i:s', $stats['last_reset']) . '</p>';
-                ?>
-                <p>
-                    <!-- <a href="<?php echo admin_url('options-general.php?page=baby-wp-test'); ?>" class="button">运行功能测试</a>
-                    <a href="<?php echo admin_url('options-general.php?page=baby-wp-install-check'); ?>" class="button">环境检查</a> -->
-                    <button type="button" id="reset-stats" class="button button-secondary">重置统计信息</button>
-                </p>
-            </div>
-            
-            <div class="baby-wp-requirements">
+            <div class="baby-wp-info-row">
+                <div class="baby-wp-stats">
+                    <h3>📊 插件统计信息</h3>
+                    <?php
+                    $stats = baby_wp_get_plugin_stats();
+                    echo '<p><strong>总过滤次数：</strong>' . intval($stats['total_filtered']) . '</p>';
+                    echo '<p><strong>字数限制过滤：</strong>' . intval($stats['filtered_by_length']) . '</p>';
+                    echo '<p><strong>中文检测过滤：</strong>' . intval($stats['filtered_by_chinese']) . '</p>';
+                    echo '<p><strong>关键词过滤：</strong>' . intval($stats['filtered_by_keywords']) . '</p>';
+                    echo '<p><strong>最后重置时间：</strong>' . date('Y-m-d H:i:s', $stats['last_reset']) . '</p>';
+                    ?>
+                    <p>
+                        <!-- <a href="<?php echo admin_url('options-general.php?page=baby-wp-test'); ?>" class="button">运行功能测试</a>
+                        <a href="<?php echo admin_url('options-general.php?page=baby-wp-install-check'); ?>" class="button">环境检查</a> -->
+                        <button type="button" id="reset-stats" class="button button-secondary">重置统计信息</button>
+                    </p>
+                </div>
+                
+                <div class="baby-wp-requirements">
                 <h3>🔧 系统要求信息</h3>
                 <?php
                 $errors = baby_wp_check_requirements();
@@ -524,38 +624,27 @@ class Baby_WP_Comment_Filter {
                     echo '</ul>';
                 }
                 ?>
-                <table class="form-table">
-                    <tr>
-                        <th scope="row">PHP版本</th>
-                        <td>
-                            <strong><?php echo PHP_VERSION; ?></strong>
-                            <?php if (version_compare(PHP_VERSION, '7.4', '>=')): ?>
-                                <span style="color: #46b450;">✅ 满足要求 (≥7.4)</span>
-                            <?php else: ?>
-                                <span style="color: #dc3232;">❌ 不满足要求 (需要≥7.4)</span>
-                            <?php endif; ?>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row">WordPress版本</th>
-                        <td>
-                            <strong><?php global $wp_version; echo $wp_version; ?></strong>
-                            <?php if (version_compare($wp_version, '5.0', '>=')): ?>
-                                <span style="color: #46b450;">✅ 满足要求 (≥5.0)</span>
-                            <?php else: ?>
-                                <span style="color: #dc3232;">❌ 不满足要求 (需要≥5.0)</span>
-                            <?php endif; ?>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row">插件版本</th>
-                        <td><strong><?php echo BABY_WP_COMMENT_FILTER_VERSION; ?></strong></td>
-                    </tr>
-                    <tr>
-                        <th scope="row">测试兼容性</th>
-                        <td>WordPress 6.4</td>
-                    </tr>
-                </table>
+                <div class="requirements-list">
+                    <p><strong>PHP版本：</strong>
+                        <strong><?php echo PHP_VERSION; ?></strong>
+                        <?php if (version_compare(PHP_VERSION, '7.4', '>=')): ?>
+                            <span style="color: #46b450;">✅ 满足要求 (≥7.4)</span>
+                        <?php else: ?>
+                            <span style="color: #dc3232;">❌ 不满足要求 (需要≥7.4)</span>
+                        <?php endif; ?>
+                    </p>
+                    <p><strong>WordPress版本：</strong>
+                        <strong><?php global $wp_version; echo $wp_version; ?></strong>
+                        <?php if (version_compare($wp_version, '5.0', '>=')): ?>
+                            <span style="color: #46b450;">✅ 满足要求 (≥5.0)</span>
+                        <?php else: ?>
+                            <span style="color: #dc3232;">❌ 不满足要求 (需要≥5.0)</span>
+                        <?php endif; ?>
+                    </p>
+                    <p><strong>插件版本：</strong><strong><?php echo BABY_WP_COMMENT_FILTER_VERSION; ?></strong></p>
+                    <p><strong>测试兼容性：</strong>WordPress 6.8.2</p>
+                </div>
+                </div>
             </div>
             
             <div class="card">
